@@ -28,6 +28,19 @@ FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
 	_In_ PCFLT_RELATED_OBJECTS FilterRelatedObjects,
 	_Flt_CompletionContext_Outptr_ PVOID* CompletionContext)
 {
+	UNREFERENCED_PARAMETER(FilterRelatedObjects);
+	UNREFERENCED_PARAMETER(CompletionContext);
+
+	if (Data->Iopb->MajorFunction == IRP_MJ_SET_INFORMATION)
+	{
+		FILE_INFORMATION_CLASS fileInformationClass = Data->Iopb->Parameters.SetFileInformation.FileInformationClass;
+		if (fileInformationClass == FileDispositionInformation || fileInformationClass == FileDispositionInformationEx)
+		{
+			DbgPrint("File delete detected.\n");
+		}
+	}
+
+	return FLT_PREOP_SUCCESS_NO_CALLBACK;
 };
 
 NTSTATUS FilterUnloadCallback(
