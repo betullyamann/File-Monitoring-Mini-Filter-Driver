@@ -10,10 +10,13 @@ const FLT_OPERATION_REGISTRATION Callbacks[] = {
 const FLT_REGISTRATION Registration = {
 	sizeof(FLT_REGISTRATION),
 	FLT_REGISTRATION_VERSION,
-	NULL,
+	0,
 	NULL,
 	Callbacks,
-	PreDeleteDetectionCallback,
+	FilterUnloadCallback,
+	NULL,
+	NULL,
+	NULL,
 	NULL,
 	NULL,
 	NULL,
@@ -22,10 +25,9 @@ const FLT_REGISTRATION Registration = {
 
 FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
 	_Inout_ PFLT_CALLBACK_DATA Data,
-	_In_  PCFLT_RELATED_OBJECTS FltObjects,
-	_Out_     PVOID* CompletionContext) 
+	_In_ PCFLT_RELATED_OBJECTS FilterRelatedObjects,
+	_Flt_CompletionContext_Outptr_ PVOID* CompletionContext)
 {
-
 };
 
 NTSTATUS FilterUnloadCallback(
@@ -43,9 +45,7 @@ NTSTATUS DriverEntry(
 {
 	UNREFERENCED_PARAMETER(RegistryPath);
 
-	NTSTATUS status;
-	
-	status = FltRegisterFilter(MonitoringFilterObject, &Registration, &RegisteredFilter);
+	NTSTATUS status = FltRegisterFilter(MonitoringFilterObject, &Registration, &RegisteredFilter);
 	if (NT_SUCCESS(status)) {
 		status = FltStartFiltering(RegisteredFilter);
 		if (!NT_SUCCESS(status)) {

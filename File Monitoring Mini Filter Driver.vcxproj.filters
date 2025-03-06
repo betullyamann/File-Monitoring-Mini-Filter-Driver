@@ -24,12 +24,12 @@
     </Inf>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="file_monitoring_filter.c">
+    <ClCompile Include="monitor.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="file_monitoring_filter.h">
+    <ClInclude Include="monitor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

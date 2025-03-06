@@ -1,6 +1,8 @@
 #pragma once
 
 #include <fltKernel.h>
+#include <dontuse.h>
+#include <suppress.h>
 
 NTSTATUS
 DriverEntry(
@@ -10,8 +12,8 @@ DriverEntry(
 
 FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
 	_Inout_ PFLT_CALLBACK_DATA Data,
-	_In_  PCFLT_RELATED_OBJECTS FltObjects,
-	_Out_     PVOID* CompletionContext
+	_In_ PCFLT_RELATED_OBJECTS FltObjects,
+	_Flt_CompletionContext_Outptr_ PVOID* CompletionContext
 );
 
 NTSTATUS FilterUnloadCallback(
