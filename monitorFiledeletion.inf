@@ -1,5 +1,5 @@
 ;
-; FileMonitoringMiniFilterDriver.inf
+; monitorfiledeletion.inf
 ;
 
 [Version]
@@ -7,7 +7,7 @@ Signature   = "$WINDOWS NT$"
 Class       = "ActivityMonitor"  ; TODO: specify appropriate Class
 ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2} ; TODO: specify appropriate ClassGuid
 Provider    = %ManufacturerName%
-CatalogFile = FileMonitoringMiniFilterDriver.cat
+CatalogFile = monitorfiledeletion.cat
 DriverVer   = 03/03/2025,1.0.0.0
 PnpLockdown = 1
 
@@ -18,7 +18,7 @@ DefaultDestDir = 12
 1 = %DiskName%,,,""
 
 [SourceDisksFiles]
-FileMonitoringMiniFilterDriver.sys = 1,,
+monitorfiledeletion.sys = 1,,
 
 ;*****************************************
 ; Install Section
@@ -28,51 +28,51 @@ FileMonitoringMiniFilterDriver.sys = 1,,
 %ManufacturerName% = Standard,NT$ARCH$.10.0...16299 ; %13% support introduced in build 16299
 
 [Standard.NT$ARCH$.10.0...16299]
-%FileMonitoringMiniFilterDriver.DeviceDesc% = FileMonitoringMiniFilterDriver_Device, Root\FileMonitoringMiniFilterDriver ; TODO: edit hw-id
+%monitorfiledeletion.DeviceDesc% = monitorfiledeletion_Device, Root\monitorfiledeletion ; TODO: edit hw-id
 
-[FileMonitoringMiniFilterDriver_Device.NT]
+[monitorfiledeletion_Device.NT]
 CopyFiles = File_Copy
 
 [File_Copy]
-FileMonitoringMiniFilterDriver.sys
+monitorfiledeletion.sys
 
 ;-------------- Service installation
-[FileMonitoringMiniFilterDriver_Device.NT.Services]
-AddService = FileMonitoringMiniFilterDriver,%SPSVCINST_ASSOCSERVICE%, FileMonitoringMiniFilterDriver_Service_Inst
+[monitorfiledeletion_Device.NT.Services]
+AddService = monitorfiledeletion,%SPSVCINST_ASSOCSERVICE%, monitorfiledeletion_Service_Inst
 
-; -------------- FileMonitoringMiniFilterDriver driver install sections
-[FileMonitoringMiniFilterDriver_Service_Inst]
-DisplayName    = %FileMonitoringMiniFilterDriver.SVCDESC%
+; -------------- monitorfiledeletion driver install sections
+[monitorfiledeletion_Service_Inst]
+DisplayName    = %monitorfiledeletion.SVCDESC%
 ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
 StartType      = 3               ; SERVICE_DEMAND_START
 ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
-ServiceBinary  = %12%\FileMonitoringMiniFilterDriver.sys
+ServiceBinary  = %12%\monitorfiledeletion.sys
 Dependencies = "FltMgr"
 LoadOrderGroup = "FSFilter HSM"
 Altitude = "370150"
-AddReg = FileMonitoringMiniFilterDriver.AddRegistry
+AddReg = monitorfiledeletion.AddRegistry
 
-[FileMonitoringMiniFilterDriver.AddRegistry]
+[monitorfiledeletion.AddRegistry]
 HKR,"Parameters","SupportedFeatures",0x00010001,0x3
 HKR,"Parameters\Instances","DefaultInstance",0x00000000,%DefaultInstance%
 HKR,"Parameters\Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
 HKR,"Parameters\Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
 HKR,"DependOnService",0x00010000,"FltMgr"
 
-[FileMonitoringMiniFilterDriver.DriverFiles]
+[monitorfiledeletion.DriverFiles]
 %DriverName%.sys
 
 [Strings]
 SPSVCINST_ASSOCSERVICE = 0x00000002
 ManufacturerName = "<Your manufacturer name>" ;TODO: Replace with your manufacturer name
-DiskName = "FileMonitoringMiniFilterDriver Installation Disk"
-FileMonitoringMiniFilterDriver.DeviceDesc = "FileMonitoringMiniFilterDriver Device"
-FileMonitoringMiniFilterDriver.SVCDESC = "FileMonitoringMiniFilterDriver Service"
-DriverName = "FileMonitoringMiniFilterDriver"
-ServiceDescription = "FileMonitoringMiniFilterDriver Mini-Filter Driver"
+DiskName = "monitorfiledeletion Installation Disk"
+monitorfiledeletion.DeviceDesc = "monitorfiledeletion Device"
+monitorfiledeletion.SVCDESC = "monitorfiledeletion Service"
+DriverName = "monitorfiledeletion"
+ServiceDescription = "monitorfiledeletion Mini-Filter Driver"
 
 ;Instances specific information.
-DefaultInstance         = "FileMonitoringMiniFilterDriver Instance"
-Instance1.Name          = "FileMonitoringMiniFilterDriver Instance"
+DefaultInstance         = "monitorfiledeletion Instance"
+Instance1.Name          = "monitorfiledeletion Instance"
 Instance1.Altitude      = "370150"
 Instance1.Flags         = 0x0              ; Allow all attachments

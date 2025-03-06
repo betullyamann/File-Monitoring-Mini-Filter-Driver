@@ -19,7 +19,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="FileMonitoringMiniFilterDriver.inf">
+    <Inf Include="monitorfiledeletion.inf">
       <Filter>Driver Files</Filter>
     </Inf>
   </ItemGroup>
