@@ -36,7 +36,13 @@ FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
 		FILE_INFORMATION_CLASS fileInformationClass = Data->Iopb->Parameters.SetFileInformation.FileInformationClass;
 		if (fileInformationClass == FileDispositionInformation || fileInformationClass == FileDispositionInformationEx)
 		{
-			DbgPrint("File delete detected.\n");
+			PFILE_DISPOSITION_INFORMATION fileInformation = (PFILE_DISPOSITION_INFORMATION)Data->Iopb->Parameters.SetFileInformation.InfoBuffer;
+			if (fileInformation->DeleteFile)
+			{
+				Data->IoStatus.Status = STATUS_ACCESS_DENIED;
+				DbgPrint("File deletion blocked.\n");
+				return FLT_PREOP_COMPLETE;
+			}
 		}
 	}
 
