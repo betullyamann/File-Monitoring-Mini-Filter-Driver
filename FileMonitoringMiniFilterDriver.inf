@@ -4,15 +4,15 @@
 
 [Version]
 Signature   = "$WINDOWS NT$"
-Class       = System ; TODO: specify appropriate Class
-ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318} ; TODO: specify appropriate ClassGuid
+Class       = "ActivityMonitor"  ; TODO: specify appropriate Class
+ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2} ; TODO: specify appropriate ClassGuid
 Provider    = %ManufacturerName%
 CatalogFile = FileMonitoringMiniFilterDriver.cat
-DriverVer   = ; TODO: set DriverVer in stampinf property pages
+DriverVer   = 03/03/2025,1.0.0.0
 PnpLockdown = 1
 
 [DestinationDirs]
-DefaultDestDir = 13
+DefaultDestDir = 12
 
 [SourceDisksNames]
 1 = %DiskName%,,,""
@@ -46,13 +46,21 @@ DisplayName    = %FileMonitoringMiniFilterDriver.SVCDESC%
 ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
 StartType      = 3               ; SERVICE_DEMAND_START
 ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
-ServiceBinary  = %13%\FileMonitoringMiniFilterDriver.sys
+ServiceBinary  = %12%\FileMonitoringMiniFilterDriver.sys
+Dependencies = "FltMgr"
+LoadOrderGroup = "FSFilter HSM"
+Altitude = "370150"
+AddReg = FileMonitoringMiniFilterDriver.AddRegistry
 
-[FileMonitoringMiniFilterDriver_Device.NT.Wdf]
-KmdfService = FileMonitoringMiniFilterDriver, FileMonitoringMiniFilterDriver_wdfsect
+[FileMonitoringMiniFilterDriver.AddRegistry]
+HKR,"Parameters","SupportedFeatures",0x00010001,0x3
+HKR,"Parameters\Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Parameters\Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+HKR,"Parameters\Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+HKR,"DependOnService",0x00010000,"FltMgr"
 
-[FileMonitoringMiniFilterDriver_wdfsect]
-KmdfLibraryVersion = $KMDFVERSION$
+[FileMonitoringMiniFilterDriver.DriverFiles]
+%DriverName%.sys
 
 [Strings]
 SPSVCINST_ASSOCSERVICE = 0x00000002
@@ -60,3 +68,11 @@ ManufacturerName = "<Your manufacturer name>" ;TODO: Replace with your manufactu
 DiskName = "FileMonitoringMiniFilterDriver Installation Disk"
 FileMonitoringMiniFilterDriver.DeviceDesc = "FileMonitoringMiniFilterDriver Device"
 FileMonitoringMiniFilterDriver.SVCDESC = "FileMonitoringMiniFilterDriver Service"
+DriverName = "FileMonitoringMiniFilterDriver"
+ServiceDescription = "FileMonitoringMiniFilterDriver Mini-Filter Driver"
+
+;Instances specific information.
+DefaultInstance         = "FileMonitoringMiniFilterDriver Instance"
+Instance1.Name          = "FileMonitoringMiniFilterDriver Instance"
+Instance1.Altitude      = "370150"
+Instance1.Flags         = 0x0              ; Allow all attachments
