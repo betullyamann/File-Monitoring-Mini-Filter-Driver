@@ -116,7 +116,7 @@ FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
 	UNREFERENCED_PARAMETER(FilterRelatedObjects);
 	UNREFERENCED_PARAMETER(CompletionContext);
 
-	if (ProtectedDirectory.Length != 0) {
+	if (ProtectedDirectory.Length == 0) {
 		return status;
 	}
 	
@@ -192,7 +192,7 @@ NTSTATUS SendLogToUser(DELETION_LOG* deletionLog ) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	if (UserCommunicationPort != NULL) {
-		status = FltSendMessage(RegisteredFilter, &UserCommunicationPort, &deletionLog, sizeof(DELETION_LOG), NULL, NULL, NULL);
+		status = FltSendMessage(RegisteredFilter, &UserCommunicationPort, deletionLog, sizeof(DELETION_LOG), NULL, NULL, NULL);
 		if (!NT_SUCCESS(status)) {
 			status = STATUS_PORT_DISCONNECTED;
 		}	
@@ -225,6 +225,7 @@ VOID ConvertAnsiToUnicode(_In_ const PCHAR source, _Out_ PWCHAR destination, _In
 	}
 
 }
+
 NTSTATUS GetProcessName(_In_ PFLT_CALLBACK_DATA Data, _Out_ PWCHAR ProcessNameW, _In_ ULONG BufferSize) {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	PEPROCESS process = FltGetRequestorProcess(Data);
@@ -234,9 +235,10 @@ NTSTATUS GetProcessName(_In_ PFLT_CALLBACK_DATA Data, _Out_ PWCHAR ProcessNameW,
 		if (NULL != imageName)
 		{
 			CHAR ProcessName[16] = { 0 };
-			RtlStringCchCopyA(ProcessName, BufferSize, (CHAR*)imageName);
-			ConvertAnsiToUnicode(ProcessName, ProcessNameW, sizeof(ProcessName));
-			status = STATUS_SUCCESS;
+			status = RtlStringCbCopyA(ProcessName, sizeof(ProcessName), imageName);
+			if (NT_SUCCESS(status)) {
+				ConvertAnsiToUnicode(ProcessName, ProcessNameW, BufferSize);
+			}
 		}
 	}
 
@@ -274,7 +276,7 @@ NTSTATUS FilterConnect(
 	UNREFERENCED_PARAMETER(ServerPortCookie);
 	UNREFERENCED_PARAMETER(ConnectionContext);
 	UNREFERENCED_PARAMETER(SizeOfContext);
-	ConnectionCookie = NULL;
+	*ConnectionCookie = NULL;
 
 	UserCommunicationPort = ClientPort;
 	return STATUS_SUCCESS;
@@ -345,12 +347,15 @@ NTSTATUS DriverEntry(
 {
 	UNREFERENCED_PARAMETER(RegistryPath);
 
+	ExInitializeFastMutex(&Mutex);
+
 	UNICODE_STRING sPsGetProcessImageFileName = RTL_CONSTANT_STRING(L"PsGetProcessImageFileName");
 	gGetProcessImageFileName = (GET_PROCESS_IMAGE_NAME)MmGetSystemRoutineAddress(&sPsGetProcessImageFileName);
 
 	NTSTATUS status = FltRegisterFilter(MonitoringFilterObject, &Registration, &RegisteredFilter);
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("FltRegisterFilter failed, status: 0x%x\n", status);
+		ExReleaseFastMutex(&Mutex);
 		return status;
 	}
 
@@ -358,6 +363,7 @@ NTSTATUS DriverEntry(
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("FilterCreateCommunicationPort failed, status: 0x%x\n", status);
 		FltUnregisterFilter(RegisteredFilter);
+		ExReleaseFastMutex(&Mutex);
 		return status;
 	}
 
@@ -365,6 +371,7 @@ NTSTATUS DriverEntry(
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("FltStartFiltering failed, status: 0x%x\n", status);
 		FltUnregisterFilter(RegisteredFilter);
+		ExReleaseFastMutex(&Mutex);
 		return status;
 	}
 
