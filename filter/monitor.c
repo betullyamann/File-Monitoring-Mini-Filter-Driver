@@ -4,18 +4,25 @@
 #include <suppress.h>
 #include <ntifs.h>
 #include <ntddk.h>
+#include <ntstrsafe.h>
 
 #define EVENT_LOG_OPERATION_SIZE 16
 #define EVENT_LOG_FILE_PATH_SIZE 256
 #define EVENT_LOG_PROCESS_NAME_SIZE 256
 
+#define SERVER_PORT_NAME L"\\MonitoringFilterPort"
+
 PFLT_FILTER RegisteredFilter = NULL;
 PFLT_PORT ServerCommunicationPort = NULL;
 PFLT_PORT UserCommunicationPort = NULL;
 
+
+typedef PCHAR(*GET_PROCESS_IMAGE_NAME) (PEPROCESS Process);
+GET_PROCESS_IMAGE_NAME gGetProcessImageFileName;
+
 typedef struct EVENT_LOG {
 	LARGE_INTEGER Time;
-	ULONG ProcessId;
+	WCHAR ProcessName[EVENT_LOG_PROCESS_NAME_SIZE];
 	WCHAR Operation[EVENT_LOG_OPERATION_SIZE];
 	WCHAR FilePath[EVENT_LOG_FILE_PATH_SIZE];
 } DELETION_LOG;
@@ -38,6 +45,12 @@ NTSTATUS FilterUnloadCallback(
 VOID LogDeletion(
 	_In_ PFLT_CALLBACK_DATA Data,
 	_Inout_ DELETION_LOG* deletionLog
+);
+
+NTSTATUS GetProcessName(
+	_In_ PFLT_CALLBACK_DATA Data, 
+	_Out_ PWCHAR ProcessName, 
+	_In_ ULONG BufferSize
 );
 
 VOID SafeCopy(
@@ -148,7 +161,7 @@ VOID LogDeletion(
 		if (NT_SUCCESS(status))
 		{
 			KeQuerySystemTime(&deletionLog->Time);
-			deletionLog->ProcessId = FltGetRequestorProcessId(Data);
+			GetProcessName(Data, deletionLog->ProcessName, EVENT_LOG_PROCESS_NAME_SIZE);
 			SafeCopy(deletionLog->Operation, L"delete", EVENT_LOG_OPERATION_SIZE);
 			SafeCopy(deletionLog->FilePath, fileNameInfo->Name.Buffer, EVENT_LOG_FILE_PATH_SIZE);
 		}
@@ -157,11 +170,47 @@ VOID LogDeletion(
 	else
 	{
 		KeQuerySystemTime(&deletionLog->Time);
-		deletionLog->ProcessId = FltGetRequestorProcessId(Data);
+		SafeCopy(deletionLog->ProcessName, L"unknown", EVENT_LOG_PROCESS_NAME_SIZE);
 		SafeCopy(deletionLog->Operation, L"delete", EVENT_LOG_OPERATION_SIZE);
 		SafeCopy(deletionLog->FilePath, L"unknown", EVENT_LOG_FILE_PATH_SIZE);
 	}
 }
+
+VOID ConvertAnsiToUnicode(_In_ const PCHAR source, _Out_ PWCHAR destination, _In_ SIZE_T destSize) {
+	ANSI_STRING ansiString;
+	UNICODE_STRING unicodeString;
+
+	RtlInitAnsiString(&ansiString, source);
+	unicodeString.Buffer = destination;
+	unicodeString.Length = 0;
+	unicodeString.MaximumLength = (USHORT)destSize;
+
+	if (NT_SUCCESS(RtlAnsiStringToUnicodeString(&unicodeString, &ansiString, FALSE))) {
+		destination[unicodeString.Length / sizeof(WCHAR)] = L'\0';
+	}
+	else {
+		destination[0] = L'\0';
+	}
+
+}
+NTSTATUS GetProcessName(_In_ PFLT_CALLBACK_DATA Data, _Out_ PWCHAR ProcessNameW, _In_ ULONG BufferSize) {
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	PEPROCESS process = FltGetRequestorProcess(Data);
+	if (NULL != process && NULL != gGetProcessImageFileName)
+	{
+		PCHAR imageName = gGetProcessImageFileName(process);
+		if (NULL != imageName)
+		{
+			CHAR ProcessName[16] = { 0 };
+			RtlStringCchCopyA(ProcessName, BufferSize, (CHAR*)imageName);
+			ConvertAnsiToUnicode(ProcessName, ProcessNameW, sizeof(ProcessName));
+			status = STATUS_SUCCESS;
+		}
+	}
+
+	return status;
+}
+
 
 NTSTATUS FilterUnloadCallback(
 	FLT_FILTER_UNLOAD_FLAGS Flags) 
@@ -215,7 +264,7 @@ NTSTATUS FilterCreateCommunicationPort()
 	OBJECT_ATTRIBUTES objectAttributes;
 	UNICODE_STRING portName;
 
-	RtlInitUnicodeString(&portName, L"\\MonitoringFilterPort");
+	RtlInitUnicodeString(&portName, SERVER_PORT_NAME);
 	InitializeObjectAttributes(&objectAttributes, &portName, OBJ_KERNEL_HANDLE, NULL, NULL);
 	NTSTATUS status = FltCreateCommunicationPort(RegisteredFilter, &ServerCommunicationPort, &objectAttributes, NULL, FilterConnect, FilterDisconnect, NULL, 1);
 
@@ -227,6 +276,9 @@ NTSTATUS DriverEntry(
 	_In_ PUNICODE_STRING RegistryPath)
 {
 	UNREFERENCED_PARAMETER(RegistryPath);
+
+	UNICODE_STRING sPsGetProcessImageFileName = RTL_CONSTANT_STRING(L"PsGetProcessImageFileName");
+	gGetProcessImageFileName = (GET_PROCESS_IMAGE_NAME)MmGetSystemRoutineAddress(&sPsGetProcessImageFileName);
 
 	NTSTATUS status = FltRegisterFilter(MonitoringFilterObject, &Registration, &RegisteredFilter);
 	if (!NT_SUCCESS(status)) {
