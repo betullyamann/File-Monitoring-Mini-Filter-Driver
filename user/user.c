@@ -4,7 +4,7 @@
 #include <fltuser.h>
 
 #define SERVER_PORT_NAME L"\\MonitoringFilterPort"
-
+#define FILE_PATH L"D:\\NO_DELETE"
 
 #define EVENT_LOG_OPERATION_SIZE 16
 #define EVENT_LOG_FILE_PATH_SIZE 256
@@ -17,11 +17,20 @@ typedef struct EVENT_LOG {
 	char filePath[EVENT_LOG_FILE_PATH_SIZE];
 } DELETION_LOG;
 
+
 int main() {
 	HANDLE hPort;
-	HRESULT result = FilterConnectCommunicationPort(SERVER_PORT_NAME, 0, NULL, 0, NULL, &hPort);
+	HRESULT result = FilterConnectCommunicationPort(SERVER_PORT_NAME, FLT_PORT_FLAG_SYNC_HANDLE, NULL, 0, NULL, &hPort);
 	if (FAILED(result)) {
 		printf("Could not connect to filter: 0x%08x\n", result);
+		return 1;
+	}
+
+	WCHAR buffer[] = FILE_PATH;
+	DWORD returnBytes;
+	result = FilterSendMessage(hPort, buffer, sizeof(buffer), NULL, 0, &returnBytes);
+	if (FAILED(result)) {
+		printf("Could not send the FILE_PATH to filter: 0x%08x\n", result);
 		return 1;
 	}
 

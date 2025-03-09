@@ -12,6 +12,9 @@
 
 #define SERVER_PORT_NAME L"\\MonitoringFilterPort"
 
+UNICODE_STRING ProtectedDirectory = { 0 };
+FAST_MUTEX Mutex;
+
 PFLT_FILTER RegisteredFilter = NULL;
 PFLT_PORT ServerCommunicationPort = NULL;
 PFLT_PORT UserCommunicationPort = NULL;
@@ -42,11 +45,6 @@ NTSTATUS FilterUnloadCallback(
 	FLT_FILTER_UNLOAD_FLAGS Flags
 );
 
-VOID LogDeletion(
-	_In_ PFLT_CALLBACK_DATA Data,
-	_Inout_ DELETION_LOG* deletionLog
-);
-
 NTSTATUS GetProcessName(
 	_In_ PFLT_CALLBACK_DATA Data, 
 	_Out_ PWCHAR ProcessName, 
@@ -75,6 +73,18 @@ NTSTATUS FilterCreateCommunicationPort();
 
 NTSTATUS SendLogToUser(DELETION_LOG* deletionLog);
 
+NTSTATUS MessageNotify(
+	PVOID PortCookie,
+	PVOID InputBuffer,
+	ULONG InputBufferLength,
+	PVOID OutputBuffer,
+	ULONG OutputBufferLength,
+	PULONG ReturnOutputBufferLength
+);
+
+BOOLEAN IsProtectedFile(_In_ PUNICODE_STRING FilePath);
+
+
 const FLT_OPERATION_REGISTRATION Callbacks[] = {
 	{IRP_MJ_SET_INFORMATION, 0, PreDeleteDetectionCallback, NULL},
 	{IRP_MJ_OPERATION_END} 
@@ -101,32 +111,82 @@ FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
 	_In_ PCFLT_RELATED_OBJECTS FilterRelatedObjects,
 	_Flt_CompletionContext_Outptr_ PVOID* CompletionContext)
 {
+	NTSTATUS status = FLT_PREOP_SUCCESS_NO_CALLBACK;
+
 	UNREFERENCED_PARAMETER(FilterRelatedObjects);
 	UNREFERENCED_PARAMETER(CompletionContext);
 
-	if (Data->Iopb->MajorFunction == IRP_MJ_SET_INFORMATION)
+	if (ProtectedDirectory.Length != 0) {
+		return status;
+	}
+	
+	if (Data->Iopb->MajorFunction != IRP_MJ_SET_INFORMATION)
 	{
-		FILE_INFORMATION_CLASS fileInformationClass = Data->Iopb->Parameters.SetFileInformation.FileInformationClass;
-		if (fileInformationClass == FileDispositionInformation || fileInformationClass == FileDispositionInformationEx)
-		{
-			PFILE_DISPOSITION_INFORMATION fileInformation = (PFILE_DISPOSITION_INFORMATION)Data->Iopb->Parameters.SetFileInformation.InfoBuffer;
-			if (fileInformation->DeleteFile)
-			{
-				DELETION_LOG deletionLog = { 0 };
-				LogDeletion(Data, &deletionLog);
-				if (SendLogToUser(&deletionLog) != 0) {
-					DbgPrint("Failed to send log to user.\n");
-				}
-
-				Data->IoStatus.Status = STATUS_ACCESS_DENIED;
-				DbgPrint("File deletion blocked.\n");
-				return FLT_PREOP_COMPLETE;
-			}
-		}
+		return status;
+	}
+	
+	FILE_INFORMATION_CLASS fileInformationClass = Data->Iopb->Parameters.SetFileInformation.FileInformationClass;
+	if (fileInformationClass != FileDispositionInformation && fileInformationClass != FileDispositionInformationEx)
+	{
+		return status;
+	}
+	
+	PFILE_DISPOSITION_INFORMATION fileInformation = (PFILE_DISPOSITION_INFORMATION)Data->Iopb->Parameters.SetFileInformation.InfoBuffer;
+	if (!fileInformation->DeleteFile)
+	{
+		return status;
 	}
 
-	return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	DELETION_LOG deletionLog = { 0 };
+	PFLT_FILE_NAME_INFORMATION fileNameInfo = NULL;
+
+	status = FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &fileNameInfo);
+	if (!NT_SUCCESS(status))
+	{
+		return status;
+	}
+
+	status = FltParseFileNameInformation(fileNameInfo);
+	if (!NT_SUCCESS(status))
+	{
+		FltReleaseFileNameInformation(fileNameInfo);
+		return status;
+	}
+	
+	SafeCopy(deletionLog.FilePath, fileNameInfo->Name.Buffer, EVENT_LOG_FILE_PATH_SIZE);
+	UNICODE_STRING unicodeStr;
+	RtlInitUnicodeString(&unicodeStr, deletionLog.FilePath);
+	if (!IsProtectedFile(&unicodeStr)) {
+		FltReleaseFileNameInformation(fileNameInfo);
+		return status;
+	}
+
+	KeQuerySystemTime(&deletionLog.Time);
+	GetProcessName(Data, deletionLog.ProcessName, EVENT_LOG_PROCESS_NAME_SIZE);
+	SafeCopy(deletionLog.Operation, L"delete", EVENT_LOG_OPERATION_SIZE);
+
+	if (SendLogToUser(&deletionLog) != 0) {
+		DbgPrint("Failed to send log to user.\n");
+	}
+	
+	FltReleaseFileNameInformation(fileNameInfo);
+
+	Data->IoStatus.Status = STATUS_ACCESS_DENIED;
+	DbgPrint("File deletion blocked.\n");
+
+	return FLT_PREOP_COMPLETE;
 };
+
+BOOLEAN IsProtectedFile(_In_ PUNICODE_STRING FilePath) {
+	BOOLEAN result = FALSE;
+	ExAcquireFastMutex(&Mutex);
+	if (ProtectedDirectory.Length > 0 && RtlPrefixUnicodeString(&ProtectedDirectory, FilePath, TRUE)) {
+		result = TRUE;
+	}
+	ExReleaseFastMutex(&Mutex);
+
+	return result;
+}
 
 NTSTATUS SendLogToUser(DELETION_LOG* deletionLog ) {
 	NTSTATUS status = STATUS_SUCCESS;
@@ -146,34 +206,6 @@ NTSTATUS SendLogToUser(DELETION_LOG* deletionLog ) {
 VOID SafeCopy(PWCHAR dest, PCWCHAR src, SIZE_T count) {
 	wcsncpy(dest, src, count);
 	dest[count - 1] = L'\0';
-}
-
-VOID LogDeletion(
-	_In_ PFLT_CALLBACK_DATA Data,
-	_Inout_ DELETION_LOG* deletionLog)
-{
-	PFLT_FILE_NAME_INFORMATION fileNameInfo = NULL;
-
-	NTSTATUS status = FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &fileNameInfo);
-	if (NT_SUCCESS(status))
-	{
-		status = FltParseFileNameInformation(fileNameInfo);
-		if (NT_SUCCESS(status))
-		{
-			KeQuerySystemTime(&deletionLog->Time);
-			GetProcessName(Data, deletionLog->ProcessName, EVENT_LOG_PROCESS_NAME_SIZE);
-			SafeCopy(deletionLog->Operation, L"delete", EVENT_LOG_OPERATION_SIZE);
-			SafeCopy(deletionLog->FilePath, fileNameInfo->Name.Buffer, EVENT_LOG_FILE_PATH_SIZE);
-		}
-		FltReleaseFileNameInformation(fileNameInfo);
-	}
-	else
-	{
-		KeQuerySystemTime(&deletionLog->Time);
-		SafeCopy(deletionLog->ProcessName, L"unknown", EVENT_LOG_PROCESS_NAME_SIZE);
-		SafeCopy(deletionLog->Operation, L"delete", EVENT_LOG_OPERATION_SIZE);
-		SafeCopy(deletionLog->FilePath, L"unknown", EVENT_LOG_FILE_PATH_SIZE);
-	}
 }
 
 VOID ConvertAnsiToUnicode(_In_ const PCHAR source, _Out_ PWCHAR destination, _In_ SIZE_T destSize) {
@@ -251,12 +283,48 @@ NTSTATUS FilterConnect(
 VOID FilterDisconnect(
 	_In_opt_ PVOID ConnectionCookie)
 {
+	PAGED_CODE();
+
 	UNREFERENCED_PARAMETER(ConnectionCookie);
 	if (UserCommunicationPort != NULL)
 	{
 		FltCloseClientPort(RegisteredFilter, &UserCommunicationPort);
 		UserCommunicationPort = NULL;
 	}
+}
+
+NTSTATUS MessageNotify(
+	PVOID PortCookie,
+	PVOID InputBuffer,
+	ULONG InputBufferLength,
+	PVOID OutputBuffer,
+	ULONG OutputBufferLength,
+	PULONG ReturnOutputBufferLength
+) {
+	PAGED_CODE();
+
+	UNREFERENCED_PARAMETER(PortCookie);
+	UNREFERENCED_PARAMETER(OutputBuffer);
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+	UNREFERENCED_PARAMETER(ReturnOutputBufferLength);
+
+	NTSTATUS status = STATUS_SUCCESS;
+
+	if (InputBuffer != NULL) {
+		try {
+			PWCHAR wInputBuffer = InputBuffer;
+			wInputBuffer[InputBufferLength - 1] = L'\0';
+			RtlInitUnicodeString(&ProtectedDirectory, wInputBuffer);
+		}
+		except(EXCEPTION_EXECUTE_HANDLER) {
+			return GetExceptionCode();
+		}
+	}
+	else {
+		status = STATUS_INVALID_PARAMETER;
+	}
+
+	return status;
 }
 
 NTSTATUS FilterCreateCommunicationPort()
@@ -266,7 +334,7 @@ NTSTATUS FilterCreateCommunicationPort()
 
 	RtlInitUnicodeString(&portName, SERVER_PORT_NAME);
 	InitializeObjectAttributes(&objectAttributes, &portName, OBJ_KERNEL_HANDLE, NULL, NULL);
-	NTSTATUS status = FltCreateCommunicationPort(RegisteredFilter, &ServerCommunicationPort, &objectAttributes, NULL, FilterConnect, FilterDisconnect, NULL, 1);
+	NTSTATUS status = FltCreateCommunicationPort(RegisteredFilter, &ServerCommunicationPort, &objectAttributes, NULL, FilterConnect, FilterDisconnect, MessageNotify, 1);
 
 	return status;
 }
