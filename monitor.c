@@ -10,6 +10,8 @@
 #define EVENT_LOG_PROCESS_NAME_SIZE 256
 
 PFLT_FILTER RegisteredFilter = NULL;
+PFLT_PORT ServerCommunicationPort = NULL;
+PFLT_PORT UserCommunicationPort = NULL;
 
 typedef struct EVENT_LOG {
 	LARGE_INTEGER Time;
@@ -43,6 +45,22 @@ VOID SafeCopy(
 	PCWCHAR src, 
 	SIZE_T count
 );
+
+NTSTATUS FilterConnect(
+	_In_ PFLT_PORT ClientPort,
+	_In_ PVOID ServerPortCookie,
+	_In_reads_bytes_(SizeOfContext) PVOID ConnectionContext,
+	_In_ ULONG SizeOfContext,
+	_Outptr_result_maybenull_ PVOID* ConnectionCookie
+);
+
+VOID FilterDisconnect(
+	_In_opt_ PVOID ConnectionCookie
+);
+
+NTSTATUS FilterCreateCommunicationPort();
+
+NTSTATUS SendLogToUser(DELETION_LOG* deletionLog);
 
 const FLT_OPERATION_REGISTRATION Callbacks[] = {
 	{IRP_MJ_SET_INFORMATION, 0, PreDeleteDetectionCallback, NULL},
@@ -83,6 +101,9 @@ FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
 			{
 				DELETION_LOG deletionLog = { 0 };
 				LogDeletion(Data, &deletionLog);
+				if (SendLogToUser(&deletionLog) != 0) {
+					DbgPrint("Failed to send log to user.\n");
+				}
 
 				Data->IoStatus.Status = STATUS_ACCESS_DENIED;
 				DbgPrint("File deletion blocked.\n");
@@ -93,6 +114,21 @@ FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
 
 	return FLT_PREOP_SUCCESS_NO_CALLBACK;
 };
+
+NTSTATUS SendLogToUser(DELETION_LOG* deletionLog ) {
+	NTSTATUS status = STATUS_SUCCESS;
+
+	if (UserCommunicationPort != NULL) {
+		status = FltSendMessage(RegisteredFilter, &UserCommunicationPort, &deletionLog, sizeof(DELETION_LOG), NULL, NULL, NULL);
+		if (!NT_SUCCESS(status)) {
+			status = STATUS_PORT_DISCONNECTED;
+		}	
+	}
+	else {
+		status = STATUS_PORT_DISCONNECTED;
+	}
+	return status;
+}
 
 VOID SafeCopy(PWCHAR dest, PCWCHAR src, SIZE_T count) {
 	wcsncpy(dest, src, count);
@@ -131,11 +167,61 @@ NTSTATUS FilterUnloadCallback(
 	FLT_FILTER_UNLOAD_FLAGS Flags) 
 {
 	UNREFERENCED_PARAMETER(Flags);
+	
+	if (ServerCommunicationPort != NULL) {
+		FltCloseCommunicationPort(ServerCommunicationPort);
+		ServerCommunicationPort = NULL;
+	}
+
+	if (UserCommunicationPort != NULL) {
+		FltCloseCommunicationPort(UserCommunicationPort);
+		UserCommunicationPort = NULL;
+	}
+
 	FltUnregisterFilter(RegisteredFilter);
 
 	return STATUS_SUCCESS;
 }
 
+NTSTATUS FilterConnect(
+	_In_ PFLT_PORT ClientPort,
+	_In_ PVOID ServerPortCookie,
+	_In_reads_bytes_(SizeOfContext) PVOID ConnectionContext,
+	_In_ ULONG SizeOfContext,
+	_Outptr_result_maybenull_ PVOID* ConnectionCookie)
+{
+	UNREFERENCED_PARAMETER(ServerPortCookie);
+	UNREFERENCED_PARAMETER(ConnectionContext);
+	UNREFERENCED_PARAMETER(SizeOfContext);
+	ConnectionCookie = NULL;
+
+	UserCommunicationPort = ClientPort;
+	return STATUS_SUCCESS;
+}
+
+VOID FilterDisconnect(
+	_In_opt_ PVOID ConnectionCookie)
+{
+	UNREFERENCED_PARAMETER(ConnectionCookie);
+	if (UserCommunicationPort != NULL)
+	{
+		FltCloseClientPort(RegisteredFilter, &UserCommunicationPort);
+		UserCommunicationPort = NULL;
+	}
+}
+
+NTSTATUS FilterCreateCommunicationPort()
+{
+	OBJECT_ATTRIBUTES objectAttributes;
+	UNICODE_STRING portName;
+
+	RtlInitUnicodeString(&portName, L"\\MonitoringFilterPort");
+	InitializeObjectAttributes(&objectAttributes, &portName, OBJ_KERNEL_HANDLE, NULL, NULL);
+	NTSTATUS status = FltCreateCommunicationPort(RegisteredFilter, &ServerCommunicationPort, &objectAttributes, NULL, FilterConnect, FilterDisconnect, NULL, 1);
+
+	return status;
+}
+ 
 NTSTATUS DriverEntry(
 	_In_ PDRIVER_OBJECT MonitoringFilterObject,
 	_In_ PUNICODE_STRING RegistryPath)
@@ -143,11 +229,23 @@ NTSTATUS DriverEntry(
 	UNREFERENCED_PARAMETER(RegistryPath);
 
 	NTSTATUS status = FltRegisterFilter(MonitoringFilterObject, &Registration, &RegisteredFilter);
-	if (NT_SUCCESS(status)) {
-		status = FltStartFiltering(RegisteredFilter);
-		if (!NT_SUCCESS(status)) {
-			FltUnregisterFilter(RegisteredFilter);
-		}
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("FltRegisterFilter failed, status: 0x%x\n", status);
+		return status;
+	}
+
+	status = FilterCreateCommunicationPort();
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("FilterCreateCommunicationPort failed, status: 0x%x\n", status);
+		FltUnregisterFilter(RegisteredFilter);
+		return status;
+	}
+
+	status = FltStartFiltering(RegisteredFilter);
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("FltStartFiltering failed, status: 0x%x\n", status);
+		FltUnregisterFilter(RegisteredFilter);
+		return status;
 	}
 
 	return status;
