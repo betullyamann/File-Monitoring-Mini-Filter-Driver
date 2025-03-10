@@ -1,4 +1,3 @@
-;
 ; monitorfiledeletion.inf
 ;
 
@@ -34,7 +33,7 @@ monitorfiledeletion.sys = 1,,
 CopyFiles = File_Copy
 
 [File_Copy]
-monitorfiledeletion.sys
+monitorfiledeletion.sys,,2
 
 ;-------------- Service installation
 [monitorfiledeletion_Device.NT.Services]
@@ -48,7 +47,7 @@ StartType      = 3               ; SERVICE_DEMAND_START
 ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
 ServiceBinary  = %12%\monitorfiledeletion.sys
 Dependencies = "FltMgr"
-LoadOrderGroup = "FSFilter HSM"
+LoadOrderGroup = "FSFilter ActivityMonitor"
 Altitude = "370150"
 AddReg = monitorfiledeletion.AddRegistry
 
