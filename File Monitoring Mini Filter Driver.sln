@@ -11,11 +11,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "monitorfiledeletion", "filt
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "monitorfiledeletion", "user\monitorfiledeletion.vcxproj", "{6D28EE98-FBDB-8D9A-305F-8E2A02BBFEAC}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "inc", "inc", "{A82B3511-62DF-4744-B66A-CDED4644985F}"
-	ProjectSection(SolutionItems) = preProject
-		monitorfiledeletion.h = monitorfiledeletion.h
-	EndProjectSection
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM64 = Debug|ARM64

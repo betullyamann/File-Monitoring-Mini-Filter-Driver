@@ -3,7 +3,6 @@
  * This driver intercepts file deletion operations and blocks them if the file is located in a protected directory.
  */
 
-
 #include <fltKernel.h>
 #include <dontuse.h>
 #include <suppress.h>
