@@ -1,3 +1,9 @@
+/*
+ * Mini-Filter Driver: File Deletion Monitoring
+ * This driver intercepts file deletion operations and blocks them if the file is located in a protected directory.
+ */
+
+
 #include <fltKernel.h>
 #include <dontuse.h>
 #include <suppress.h>
@@ -9,7 +15,7 @@
 #define EVENT_LOG_FILE_PATH_SIZE 256
 #define EVENT_LOG_PROCESS_NAME_SIZE 256
 
-#define SERVER_PORT_NAME L"\\MonitoringFilterPort"
+const PWSTR MonitoringPortName = L"\\MonitoringFilterPort";
 
 UNICODE_STRING ProtectedDirectory = { 0 };
 FAST_MUTEX Mutex;
@@ -18,15 +24,15 @@ PFLT_FILTER RegisteredFilter = NULL;
 PFLT_PORT ServerCommunicationPort = NULL;
 PFLT_PORT UserCommunicationPort = NULL;
 
-
+// Function pointer to retrieve process image name
 typedef PCHAR(*GET_PROCESS_IMAGE_NAME) (PEPROCESS Process);
 GET_PROCESS_IMAGE_NAME gGetProcessImageFileName;
 
 typedef struct EVENT_LOG {
-    LARGE_INTEGER Time;
-    WCHAR ProcessName[EVENT_LOG_PROCESS_NAME_SIZE];
-    WCHAR Operation[EVENT_LOG_OPERATION_SIZE];
-    WCHAR FilePath[EVENT_LOG_FILE_PATH_SIZE];
+    LARGE_INTEGER Time; // Timestamp of the event
+    WCHAR ProcessName[EVENT_LOG_PROCESS_NAME_SIZE]; // Name of the process attempting deletion
+    WCHAR Operation[EVENT_LOG_OPERATION_SIZE]; // Operation type ("delete")
+    WCHAR FilePath[EVENT_LOG_FILE_PATH_SIZE]; // Path of the file being deleted
 } DELETION_LOG;
 
 NTSTATUS DriverEntry(
@@ -104,6 +110,7 @@ const FLT_REGISTRATION Registration = {
     NULL
 };
 
+// Callback function to detect file deletion attempts
 FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
     _Inout_ PFLT_CALLBACK_DATA Data,
     _In_ PCFLT_RELATED_OBJECTS FilterRelatedObjects,
@@ -118,6 +125,7 @@ FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
         return status;
     }
 
+    // Ensure this is a file deletion request
 	if (Data->Iopb->MajorFunction != IRP_MJ_SET_INFORMATION)
 	{
         return status;
@@ -159,6 +167,7 @@ FLT_PREOP_CALLBACK_STATUS PreDeleteDetectionCallback(
         return status;
     }
 
+    // Log the attempt and prevent deletion
     KeQuerySystemTime(&deletionLog.Time);
     GetProcessName(Data, deletionLog.ProcessName, EVENT_LOG_PROCESS_NAME_SIZE);
     SafeCopy(deletionLog.Operation, L"delete", EVENT_LOG_OPERATION_SIZE);
@@ -311,6 +320,7 @@ NTSTATUS MessageNotify(
 
     if (InputBuffer != NULL) {
         __try {
+            // Take the protected directory from user
             PWCHAR wInputBuffer = InputBuffer;
             wInputBuffer[InputBufferLength - 1] = L'\0';
 			RtlInitUnicodeString(&ProtectedDirectory, wInputBuffer);
@@ -332,21 +342,15 @@ NTSTATUS FilterCreateCommunicationPort()
     UNICODE_STRING portName;
     NTSTATUS status;
 
+    RtlInitUnicodeString(&portName, MonitoringPortName);
     InitializeObjectAttributes(&objectAttributes, &portName, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
 
-    status = FltCreateCommunicationPort(RegisteredFilter,
-        &ServerCommunicationPort,
-        &objectAttributes,
-        NULL,
-        FilterConnect,
-        FilterDisconnect,
-        MessageNotify,
-        1);
+    status = FltCreateCommunicationPort(RegisteredFilter, &ServerCommunicationPort, &objectAttributes, NULL, FilterConnect, FilterDisconnect, MessageNotify, 1);
     if (!NT_SUCCESS(status)) {
-        KdPrint(("FltCreateCommunicationPort failed: 0x%08x\n", status));
+        DbgPrint("FltCreateCommunicationPort failed: 0x%08x\n", status);
     }
     else {
-        KdPrint(("Successfully created communication port.\n"));
+        DbgPrint("Successfully created communication port.\n");
     }
 
     return status;
@@ -360,6 +364,7 @@ NTSTATUS DriverEntry(
 
     ExInitializeFastMutex(&Mutex);
 
+    // Resolve function for retrieving process image name
     UNICODE_STRING sPsGetProcessImageFileName = RTL_CONSTANT_STRING(L"PsGetProcessImageFileName");
     gGetProcessImageFileName = (GET_PROCESS_IMAGE_NAME)MmGetSystemRoutineAddress(&sPsGetProcessImageFileName);
 
